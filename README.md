@@ -1,39 +1,52 @@
 # ZA CMA Learning Hub
 
-An independent digital learning platform for CMA students, created by **Zaid Alam**.
+**An independent digital learning platform for CMA students**  
+Created by **Zaid Alam**.
 
-## Project overview
+## Live website
 
-The project is provided as a standalone HTML application. Its interface includes a learning dashboard, subject/classroom areas, practice and progress features, a resource library, theme switching, and a developer profile.
+After enabling GitHub Pages, add your published website URL here.
 
-## Files
+## Features
 
-- `index.html` — the main web application.
-- `README.md` — project information and GitHub setup instructions.
+- CMA learning dashboard and study progress tracking
+- Subject-wise learning and practice resources
+- MCQ practice, tests, results and revision tools
+- AI teacher/chat features
+- Study library, document tools, notes and flashcards
+- Light and dark themes
+- Responsive layout for mobile and desktop
+- Developer profile and contact links
 
-## Run locally
+## Publish or update on GitHub Pages
 
-1. Download or clone this repository.
-2. Open `index.html` in a modern web browser.
+1. Open your GitHub repository.
+2. Upload `index.html` and `README.md` to the **root** of the repository.
+3. If GitHub asks whether to replace the existing files, confirm the replacement.
+4. Open **Settings → Pages**.
+5. Under **Build and deployment**, select **Deploy from a branch**.
+6. Select your publishing branch (usually `main`) and folder (`/root`), then save.
+7. Wait for GitHub Pages to finish deploying, then open the website URL shown in the Pages settings.
 
-Some features may depend on services or API endpoints configured for the original deployment. Those features may not work from a local file or a static GitHub Pages site without the required backend and configuration.
+`index.html` must remain in the repository root for this setup.
 
-## Publish with GitHub Pages
+## Important notes
 
-1. Create a repository on GitHub.
-2. Upload `index.html` and `README.md` to the repository's root folder.
-3. Open **Settings → Pages**.
-4. Under the build/deployment settings, select **Deploy from a branch**.
-5. Select your main branch and the `/(root)` folder, then save.
-6. Wait for GitHub Pages to publish the site. The published URL will appear in the Pages settings.
+- This is a single-page HTML application. The uploaded `index.html` includes the app's client-side code and bundled study-document data.
+- The app contains a browser-based local backend mode. Data saved in that mode is generally kept in that browser/device; it is not automatically shared or synchronized between students or devices.
+- Some AI features require an AI provider API key configured in the app's Settings. Treat API keys as private credentials. Do not publish a key in this repository, paste it into public posts, or share screenshots that reveal it.
+- GitHub Pages hosts static files only. If you later configure a separate server-based backend, that backend must be hosted separately and the frontend must be configured to communicate with it.
+- External services such as Google Fonts, PDF.js, and AI provider APIs require an internet connection and may be subject to their own availability, terms, and usage limits.
 
-## Notes
+## Project files
 
-- Keep `index.html` in the repository root so GitHub Pages can use it as the site entry point.
-- Do not upload API keys, passwords, private student information, or other secrets to a public repository.
-- This repository does not include a separate backend server unless you add one yourself.
+| File | Purpose |
+|---|---|
+| `index.html` | Main website application |
+| `README.md` | Project information and GitHub Pages deployment guide |
 
 ## Credits
 
-Created by **Zaid Alam**.  
-Project: **ZA CMA Learning Hub**.
+**Project:** ZA CMA Learning Hub  
+**Developer:** Zaid Alam  
+**Email:** zaidalam.official2@gmail.com
