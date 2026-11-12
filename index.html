@@ -1673,7 +1673,7 @@ function renderNav() {
     (practiceLinks ? `<div class="nav-sec">Practice</div>${practiceLinks}` : '') +
     (studyLinks ? `<div class="nav-sec">Study tools</div>${studyLinks}` : '') +
     (insightLinks ? `<div class="nav-sec">Insights</div>${insightLinks}` : '') +
-    (!isStudentEdition() ? `<div class="nav-sec">Administration</div>${link('builder','Create student app','edit')}` : '') +
+    (!isStudentEdition() ? `<div class="nav-sec">Administration</div>${link('builder','Administration','edit')}` : '') +
     link('developer','About Developer','sparkles',null,'developer');
   highlightNav();
 }
@@ -1692,6 +1692,80 @@ function navigate(h) {
   try { if (location.hash !== h) history.pushState(null, '', h); } catch { /* sandboxed: ignore, the app keeps its own route */ }
   setTimeout(() => { if (Nav.rendered >= tok) return; renderRoute(); }, 0); // deferred so a link's own click handler can run first
 }
+/* ---------- Owner-only administration authentication (Supabase Auth + RLS) ---------- */
+const ZA_AUTH_URL = 'https://xdamimtyhtvmyuhkcjqw.supabase.co';
+const ZA_PUBLIC_KEY = 'sb_publishable_g6b2rfRn8H1h652zcu0B9g_pbWcIs1b';
+const ZA_OWNER_EMAIL = 'zaidalam.official2@gmail.com';
+let ZA_OWNER_SESSION = null;
+try { ZA_OWNER_SESSION = JSON.parse(sessionStorage.getItem('za.owner.session') || 'null'); } catch { ZA_OWNER_SESSION = null; }
+function zaSaveOwnerSession(session) {
+  ZA_OWNER_SESSION = session;
+  try { sessionStorage.setItem('za.owner.session', JSON.stringify(session)); } catch { /* private mode */ }
+}
+function zaClearOwnerSession() {
+  ZA_OWNER_SESSION = null;
+  try { sessionStorage.removeItem('za.owner.session'); } catch { /* ignore */ }
+}
+async function zaAuthFetch(path, options = {}, token = '') {
+  const headers = { apikey: ZA_PUBLIC_KEY, ...(options.headers || {}) };
+  if (token) headers.Authorization = 'Bearer ' + token;
+  if (options.body && typeof options.body !== 'string') { headers['Content-Type'] = 'application/json'; options = { ...options, body: JSON.stringify(options.body) }; }
+  const res = await fetch(ZA_AUTH_URL + path, { ...options, headers });
+  let data = {}; try { data = await res.json(); } catch { /* empty response */ }
+  if (!res.ok) throw new Error(data.msg || data.message || data.error_description || data.error || 'Authentication request failed (' + res.status + ')');
+  return data;
+}
+async function zaRefreshOwnerSession() {
+  if (!ZA_OWNER_SESSION || !ZA_OWNER_SESSION.refresh_token) return false;
+  try {
+    const next = await zaAuthFetch('/auth/v1/token?grant_type=refresh_token', { method: 'POST', body: { refresh_token: ZA_OWNER_SESSION.refresh_token } });
+    zaSaveOwnerSession(next); return true;
+  } catch { zaClearOwnerSession(); return false; }
+}
+async function zaVerifyOwner() {
+  if (!ZA_OWNER_SESSION || !ZA_OWNER_SESSION.access_token) return false;
+  let user;
+  try { user = await zaAuthFetch('/auth/v1/user', { method: 'GET' }, ZA_OWNER_SESSION.access_token); }
+  catch {
+    if (!await zaRefreshOwnerSession()) return false;
+    try { user = await zaAuthFetch('/auth/v1/user', { method: 'GET' }, ZA_OWNER_SESSION.access_token); }
+    catch { zaClearOwnerSession(); return false; }
+  }
+  if (!user || String(user.email || '').toLowerCase() !== ZA_OWNER_EMAIL) { zaClearOwnerSession(); return false; }
+  const q = '?select=account_status&id=eq.' + encodeURIComponent(user.id);
+  const profiles = await zaAuthFetch('/rest/v1/profiles' + q, { method: 'GET' }, ZA_OWNER_SESSION.access_token);
+  const roles = await zaAuthFetch('/rest/v1/user_roles?select=role&user_id=eq.' + encodeURIComponent(user.id), { method: 'GET' }, ZA_OWNER_SESSION.access_token);
+  if (!Array.isArray(profiles) || !profiles[0] || profiles[0].account_status !== 'active' || !Array.isArray(roles) || !roles.some(x => x.role === 'owner')) return false;
+  return true;
+}
+function zaRenderAdminLogin(el, message = '') {
+  el.innerHTML = `<div class="card lock-page" style="max-width:520px;margin:2rem auto;text-align:left"><div class="lock-badge">${icon('shield')}</div><h2>Administration locked</h2><p class="muted">Sign in with the registered Owner Admin account to open Create Student App. Student accounts cannot access this area.</p><form id="zaOwnerLogin" class="mt"><label class="f">Owner email<input id="zaOwnerEmail" type="email" autocomplete="username" required value="${ZA_OWNER_EMAIL}" readonly></label><label class="f mt-s">Password<input id="zaOwnerPassword" type="password" autocomplete="current-password" required maxlength="128" placeholder="Enter your Owner Admin password"></label><div id="zaOwnerError" class="banner bad mt-s" style="${message ? '' : 'display:none'}">${esc(message)}</div><button class="btn mt" id="zaOwnerSubmit" type="submit" style="width:100%">${icon('lock')} Unlock administration</button></form><p class="muted sm-t mt-s">Authentication is checked by Supabase. No admin password is stored in this HTML file.</p><div class="row wrap mt-s"><a class="btn ghost" href="#/dashboard">Back to dashboard</a></div></div>`;
+  const form = $('#zaOwnerLogin', el);
+  form.onsubmit = async ev => {
+    ev.preventDefault();
+    const btn = $('#zaOwnerSubmit', el), err = $('#zaOwnerError', el), password = $('#zaOwnerPassword', el).value;
+    btn.disabled = true; btn.textContent = 'Verifying owner account…'; err.style.display = 'none';
+    try {
+      const session = await zaAuthFetch('/auth/v1/token?grant_type=password', { method: 'POST', body: { email: ZA_OWNER_EMAIL, password } });
+      zaSaveOwnerSession(session);
+      // Server verifies the JWT, exact owner email, active profile and owner-role uniqueness.
+      await zaAuthFetch('/functions/v1/owner-bootstrap', { method: 'POST', body: {} }, session.access_token);
+      if (!await zaVerifyOwner()) throw new Error('This account does not have active Owner Admin permissions.');
+      await renderRoute();
+    } catch (e) {
+      zaClearOwnerSession(); err.textContent = e.message || 'Sign-in failed. Check your email and password.'; err.style.display = 'block';
+      btn.disabled = false; btn.innerHTML = icon('lock') + ' Unlock administration';
+    }
+  };
+}
+async function zaRequireOwner(el) {
+  if (isStudentEdition()) return false;
+  try { if (await zaVerifyOwner()) return true; }
+  catch (e) { zaRenderAdminLogin(el, e.message || 'Could not verify Owner Admin access.'); return false; }
+  zaRenderAdminLogin(el); return false;
+}
+function zaAdminLogout() { zaClearOwnerSession(); navigate('#/builder'); }
+
 async function renderRoute() {
   Nav.rendered = Nav.tok; Nav.renderedHash = currentHash();
   const hash = currentHash().replace(/^#\/?/, '') || 'dashboard';
@@ -1713,6 +1787,7 @@ async function renderRoute() {
       : `<div class="card lock-page"><div class="lock-badge">${icon('lock')}</div><span class="chip" style="background:var(--gold);color:#1b2160;border-color:var(--gold);font-weight:850;letter-spacing:.08em">PRO ACCESS</span><h2>Pro feature</h2><p class="muted">This feature is available to ZA CMA Learning Hub Pro members. Contact Zaid Alam to ask about a Pro subscription or to activate access for your student account.</p><div class="row wrap" style="justify-content:center"><a class="btn" href="https://wa.me/923484020589?text=Assalam-o-Alaikum%2C%20I%20want%20to%20get%20Pro%20access%20for%20ZA%20CMA%20Learning%20Hub." target="_blank" rel="noopener noreferrer">${icon('send')} WhatsApp for Pro</a><a class="btn soft" href="mailto:zaidalam.official2@gmail.com?subject=ZA%20CMA%20Learning%20Hub%20Pro%20Access">${icon('mail')} Email</a><a class="btn ghost" href="#/developer">View contact details</a></div><div class="row wrap" style="justify-content:center"><a class="btn ghost" href="#/dashboard">Back to dashboard</a></div></div>`;
     $('#topTitle').textContent = t; document.title = t + ' · ZA CMA Learning Hub'; return;
   }
+  if (name === 'builder' && !await zaRequireOwner(el)) { $('#topTitle').textContent = 'Administration locked'; document.title = 'Administration locked · ZA CMA Learning Hub'; return; }
   try { await r.fn(el, rest); } catch (e) { console.error(e); el.innerHTML = `<div class="banner bad">${icon('alert')}<div><b>Something went wrong</b>${esc(e.message)}<div class="mt-s"><button class="btn sm" onclick="renderRoute()">Try again</button></div></div></div>`; }
   const t = typeof r.title === 'function' ? r.title(rest) : r.title; $('#topTitle').textContent = t || 'ZA CMA Learning Hub'; document.title = (t ? t + ' · ' : '') + 'ZA CMA Learning Hub';
 }
@@ -2890,7 +2965,7 @@ route('builder', async (el) => {
   let editSlug = '';
   const checks = features.map(([key,label,desc]) => `<label class="permission-item"><input type="checkbox" data-permission="${key}" ${['personalSettings','developer'].includes(key) ? 'checked disabled' : (cfg[key] !== false ? 'checked' : '')}><span><b>${esc(label)}</b><small>${esc(key === 'personalSettings' ? 'Always enabled so students can connect their own Gemini key and manage their profile' : (key === 'developer' ? 'Always available so students can contact you about Pro subscriptions' : desc))}</small></span></label>`).join('');
   const stageOptions = STUDY_STAGES.map(g => `<option value="${g.key}">${esc(g.title)} (${esc(g.subtitle)})</option>`).join('');
-  el.innerHTML = `<div class="page-head"><div><h1>Student App Builder</h1><p>Create password-protected student copies and choose exactly which features each student can use.</p></div><span class="chip">Owner controls</span></div>
+  el.innerHTML = `<div class="page-head"><div><h1>Student App Builder</h1><p>Create password-protected student copies and choose exactly which features each student can use.</p></div><div class="row wrap"><span class="chip">Owner controls</span><button class="btn sm ghost" type="button" id="zaAdminLogout">${icon('log-out')} Lock / Sign out</button></div></div>
     <div class="banner">${icon('info')}<div><b>Student enters their own profile</b>You only enter a name to identify the student in your admin list and create their password. On first opening the file, the student chooses their own profile name, date of birth and (unless locked below) CMA stage. Every new file starts with fresh study data and a blank AI key.</div></div>
     <section class="card mb"><h3>1 · Student record and password</h3>
       <div class="grid g2 mt-s">
@@ -3052,6 +3127,7 @@ route('builder', async (el) => {
     finally { btn.disabled = false; }
   };
   renderRecords(); setEditMode(null);
+  const adminLogout = $('#zaAdminLogout', el); if (adminLogout) adminLogout.onclick = zaAdminLogout;
 }, 'Student App Builder');
 
 route('developer', async (el) => {
